@@ -1,7 +1,25 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 
-type Section = "cover" | "charts" | "reference" | "notifications" | "export";
+type Section = "cover" | "charts" | "reference" | "notifications" | "export" | "upload";
+
+const ANALYZE_URL = "https://functions.poehali.dev/0fb0bb3b-8721-44b2-8740-cffed004e0ff";
+
+interface RecognizedResult {
+  name: string;
+  value: number;
+  unit: string;
+  normMin: number | null;
+  normMax: number | null;
+  status: "normal" | "high" | "low" | "unknown";
+}
+
+interface AnalysisResponse {
+  date: string | null;
+  lab: string | null;
+  patient: string | null;
+  results: RecognizedResult[];
+}
 
 const COVER_IMAGE = "https://cdn.poehali.dev/projects/0af45e95-fde7-4d0a-82b6-45cd06b5ee4b/files/8f1af8cd-86e8-4484-b97c-23da96c528d1.jpg";
 
@@ -485,8 +503,358 @@ function ExportSection() {
   );
 }
 
+// --- UPLOAD SECTION ---
+type UploadState = "idle" | "dragging" | "processing" | "done" | "error";
+
+function UploadSection() {
+  const [uploadState, setUploadState] = useState<UploadState>("idle");
+  const [progress, setProgress] = useState(0);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [result, setResult] = useState<AnalysisResponse | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const reset = () => {
+    setUploadState("idle");
+    setProgress(0);
+    setPreviewUrl(null);
+    setFileName(null);
+    setResult(null);
+    setErrorMsg(null);
+  };
+
+  const processFile = useCallback(async (file: File) => {
+    if (!file) return;
+
+    const allowed = ["image/jpeg", "image/png", "image/webp", "application/pdf", "image/gif"];
+    if (!allowed.includes(file.type)) {
+      setErrorMsg("Поддерживаются: JPG, PNG, WebP, PDF");
+      setUploadState("error");
+      return;
+    }
+
+    setFileName(file.name);
+    setUploadState("processing");
+    setProgress(10);
+
+    // Preview for images
+    if (file.type.startsWith("image/")) {
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+    }
+
+    // Convert to base64
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      setProgress(30);
+      const dataUrl = e.target?.result as string;
+      // Extract base64 part after comma
+      const base64 = dataUrl.split(",")[1];
+      const mimeType = file.type === "application/pdf" ? "image/jpeg" : file.type;
+
+      setProgress(50);
+      try {
+        const resp = await fetch(ANALYZE_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: base64, mimeType }),
+        });
+
+        setProgress(85);
+        const data = await resp.json();
+
+        if (!resp.ok || data.error) {
+          setErrorMsg(data.error || "Ошибка распознавания");
+          setUploadState("error");
+          return;
+        }
+
+        setProgress(100);
+        setResult(data as AnalysisResponse);
+        setUploadState("done");
+      } catch {
+        setErrorMsg("Ошибка сети. Проверьте подключение.");
+        setUploadState("error");
+      }
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setUploadState("idle");
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+  }, [processFile]);
+
+  const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setUploadState("dragging"); };
+  const onDragLeave = () => { if (uploadState === "dragging") setUploadState("idle"); };
+
+  const statusColors: Record<string, string> = {
+    normal: "text-green-400",
+    high: "text-amber-400",
+    low: "text-red-400",
+    unknown: "text-muted-foreground",
+  };
+  const statusLabels: Record<string, string> = {
+    normal: "Норма",
+    high: "Выше нормы",
+    low: "Ниже нормы",
+    unknown: "—",
+  };
+  const statusBg: Record<string, string> = {
+    normal: "bg-green-400/10 border-green-400/20",
+    high: "bg-amber-400/10 border-amber-400/20",
+    low: "bg-red-400/10 border-red-400/20",
+    unknown: "bg-secondary border-border",
+  };
+
+  return (
+    <div className="p-6 max-w-3xl mx-auto space-y-6">
+      <div className="stagger-1">
+        <h2 className="text-2xl font-bold text-white mb-1 flex items-center gap-3">
+          Загрузить анализ
+          <span className="text-xs font-mono bg-sky-500/15 text-sky-400 border border-sky-500/30 px-2 py-0.5 rounded-full">ИИ-распознавание</span>
+        </h2>
+        <p className="text-muted-foreground text-sm">Загрузите фото или скан бланка — система автоматически извлечёт все показатели</p>
+      </div>
+
+      {/* Drop zone */}
+      {uploadState !== "done" && (
+        <div
+          className={`stagger-2 relative rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer
+            ${uploadState === "dragging"
+              ? "border-sky-400 bg-sky-500/10 scale-[1.01]"
+              : uploadState === "processing"
+              ? "border-sky-500/40 bg-card"
+              : uploadState === "error"
+              ? "border-red-500/40 bg-red-500/5"
+              : "border-border hover:border-sky-500/50 hover:bg-sky-500/5 bg-card"
+            }`}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onClick={() => uploadState === "idle" && fileInputRef.current?.click()}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,.pdf"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) processFile(f); }}
+          />
+
+          {/* Idle state */}
+          {uploadState === "idle" && (
+            <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center mb-4">
+                <Icon name="Upload" size={28} className="text-sky-400" />
+              </div>
+              <h3 className="text-white font-semibold mb-1">Перетащите файл сюда</h3>
+              <p className="text-muted-foreground text-sm mb-4">или нажмите для выбора файла</p>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground/60 font-mono">
+                <span className="px-2 py-1 bg-secondary rounded-md">JPG</span>
+                <span className="px-2 py-1 bg-secondary rounded-md">PNG</span>
+                <span className="px-2 py-1 bg-secondary rounded-md">WebP</span>
+                <span className="px-2 py-1 bg-secondary rounded-md">PDF</span>
+              </div>
+            </div>
+          )}
+
+          {/* Dragging state */}
+          {uploadState === "dragging" && (
+            <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-sky-500/20 border border-sky-500/50 flex items-center justify-center mb-4 animate-bounce">
+                <Icon name="FileDown" size={28} className="text-sky-400" />
+              </div>
+              <h3 className="text-sky-400 font-semibold">Отпустите для загрузки</h3>
+            </div>
+          )}
+
+          {/* Processing state */}
+          {uploadState === "processing" && (
+            <div className="flex flex-col items-center justify-center py-14 px-6 text-center">
+              {/* Scan animation visual */}
+              {previewUrl && (
+                <div className="relative w-40 h-40 rounded-xl overflow-hidden mb-6 border border-border">
+                  <img src={previewUrl} alt="preview" className="w-full h-full object-cover opacity-60" />
+                  <div className="absolute inset-0 scan-overlay" />
+                  <div className="absolute inset-0 bg-gradient-to-b from-sky-500/10 to-transparent" />
+                </div>
+              )}
+              {!previewUrl && (
+                <div className="w-16 h-16 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center mb-6">
+                  <Icon name="FileSearch" size={28} className="text-sky-400 animate-pulse" />
+                </div>
+              )}
+              <h3 className="text-white font-semibold mb-1">Анализирую бланк...</h3>
+              <p className="text-muted-foreground text-sm mb-1 font-mono">{fileName}</p>
+              <p className="text-xs text-sky-400/70 mb-5">GPT-4 Vision извлекает показатели</p>
+              <div className="w-64">
+                <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-sky-500 rounded-full transition-all duration-700"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <div className="flex justify-between mt-1.5 text-xs text-muted-foreground/50 font-mono">
+                  <span>Распознавание</span>
+                  <span>{progress}%</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Error state */}
+          {uploadState === "error" && (
+            <div className="flex flex-col items-center justify-center py-14 px-6 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4">
+                <Icon name="AlertCircle" size={28} className="text-red-400" />
+              </div>
+              <h3 className="text-red-400 font-semibold mb-1">Не удалось распознать</h3>
+              <p className="text-muted-foreground text-sm mb-5">{errorMsg}</p>
+              <button
+                onClick={(e) => { e.stopPropagation(); reset(); }}
+                className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-sm rounded-lg transition-all font-mono"
+              >
+                Попробовать снова
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* RESULTS */}
+      {uploadState === "done" && result && (
+        <div className="stagger-2 space-y-5">
+          {/* Header */}
+          <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-5 flex items-start gap-4">
+            {previewUrl && (
+              <img src={previewUrl} alt="preview" className="w-16 h-16 rounded-lg object-cover border border-border shrink-0" />
+            )}
+            {!previewUrl && (
+              <div className="w-16 h-16 rounded-lg bg-secondary border border-border flex items-center justify-center shrink-0">
+                <Icon name="FileText" size={24} className="text-sky-400" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <Icon name="CheckCircle" size={16} className="text-green-400" />
+                <span className="text-sm font-semibold text-green-400">Успешно распознано</span>
+              </div>
+              <p className="text-xs text-muted-foreground font-mono truncate">{fileName}</p>
+              <div className="flex flex-wrap gap-3 mt-2 text-xs text-muted-foreground">
+                {result.date && <span><span className="text-muted-foreground/50">Дата:</span> {result.date}</span>}
+                {result.lab && <span><span className="text-muted-foreground/50">Лаб.:</span> {result.lab}</span>}
+                {result.patient && <span><span className="text-muted-foreground/50">Пациент:</span> {result.patient}</span>}
+                <span><span className="text-muted-foreground/50">Показателей:</span> {result.results.length}</span>
+              </div>
+            </div>
+            <button onClick={reset} className="text-muted-foreground hover:text-white transition-colors shrink-0">
+              <Icon name="X" size={18} />
+            </button>
+          </div>
+
+          {/* Summary stats */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: "В норме", count: result.results.filter(r => r.status === "normal").length, color: "text-green-400", bg: "bg-green-400/10 border-green-400/20" },
+              { label: "Выше нормы", count: result.results.filter(r => r.status === "high").length, color: "text-amber-400", bg: "bg-amber-400/10 border-amber-400/20" },
+              { label: "Ниже нормы", count: result.results.filter(r => r.status === "low").length, color: "text-red-400", bg: "bg-red-400/10 border-red-400/20" },
+            ].map(s => (
+              <div key={s.label} className={`rounded-xl border p-4 text-center ${s.bg}`}>
+                <div className={`text-2xl font-bold font-mono ${s.color}`}>{s.count}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Results table */}
+          <div className="space-y-2">
+            <div className="grid grid-cols-4 gap-3 px-4 py-2 text-xs text-muted-foreground font-mono uppercase tracking-wider">
+              <span className="col-span-2">Показатель</span>
+              <span>Значение</span>
+              <span>Статус</span>
+            </div>
+            {result.results.map((item, i) => (
+              <div
+                key={i}
+                className={`grid grid-cols-4 gap-3 px-4 py-3.5 bg-card border rounded-xl transition-all hover:border-sky-500/30 ${
+                  item.status === "high" ? "border-amber-500/20" :
+                  item.status === "low" ? "border-red-500/20" : "border-border"
+                }`}
+              >
+                <div className="col-span-2 flex items-center gap-2">
+                  <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    item.status === "normal" ? "bg-green-400" :
+                    item.status === "high" ? "bg-amber-400" :
+                    item.status === "low" ? "bg-red-400" : "bg-muted-foreground"
+                  }`} />
+                  <span className="text-sm text-white font-medium">{item.name}</span>
+                </div>
+                <div>
+                  <span className="text-sm font-mono font-bold text-white">{item.value}</span>
+                  <span className="text-xs text-muted-foreground ml-1">{item.unit}</span>
+                  {(item.normMin !== null || item.normMax !== null) && (
+                    <div className="text-xs text-muted-foreground/50 font-mono">
+                      {item.normMin ?? "—"}–{item.normMax ?? "—"}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full border font-mono ${statusBg[item.status]} ${statusColors[item.status]}`}>
+                    {statusLabels[item.status]}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={reset}
+              className="flex items-center gap-2 px-4 py-2.5 border border-border hover:border-sky-500/30 text-muted-foreground hover:text-white text-sm rounded-xl transition-all font-mono"
+            >
+              <Icon name="Upload" size={15} />
+              Загрузить другой
+            </button>
+            <button className="flex items-center gap-2 px-4 py-2.5 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-400 text-sm rounded-xl transition-all font-mono">
+              <Icon name="Save" size={15} />
+              Сохранить в историю
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tips */}
+      {uploadState === "idle" && (
+        <div className="stagger-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+          {[
+            { icon: "Camera", title: "Фото бланка", desc: "Сфотографируйте бланк при хорошем освещении" },
+            { icon: "ScanLine", title: "Скан/PDF", desc: "Загрузите PDF или скан из лаборатории" },
+            { icon: "Zap", title: "Мгновенно", desc: "Результат готов за 10–30 секунд" },
+          ].map((tip, i) => (
+            <div key={i} className="flex gap-3 p-4 bg-card border border-border rounded-xl">
+              <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0">
+                <Icon name={tip.icon as "Camera"} size={15} className="text-sky-400" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-white">{tip.title}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{tip.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- NAV ---
 const navItems = [
+  { id: "upload", label: "Загрузить", icon: "Upload" },
   { id: "charts", label: "Графики", icon: "BarChart2" },
   { id: "reference", label: "Справочник", icon: "BookOpen" },
   { id: "notifications", label: "Уведомления", icon: "Bell" },
@@ -498,13 +866,13 @@ export default function Index() {
   const [section, setSection] = useState<Section>("cover");
 
   if (section === "cover") {
-    return <CoverPage onStart={() => setSection("charts")} />;
+    return <CoverPage onStart={() => setSection("upload")} />;
   }
 
   return (
     <div className="min-h-screen grid-bg">
       <nav className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-md">
-        <div className="max-w-5xl mx-auto px-6 flex items-center h-14 gap-6">
+        <div className="max-w-5xl mx-auto px-6 flex items-center h-14 gap-4">
           <button
             onClick={() => setSection("cover")}
             className="flex items-center gap-2 text-sky-400 hover:text-sky-300 transition-colors shrink-0"
@@ -513,14 +881,16 @@ export default function Index() {
             <span className="text-sm font-semibold font-mono hidden sm:block">ГемоАналит</span>
           </button>
           <div className="w-px h-5 bg-border shrink-0" />
-          <div className="flex items-center gap-1 flex-1">
+          <div className="flex items-center gap-1 flex-1 overflow-x-auto">
             {navItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => setSection(item.id as Section)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-all ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-all whitespace-nowrap ${
                   section === item.id
-                    ? "bg-sky-500/15 text-sky-400 border border-sky-500/30"
+                    ? item.id === "upload"
+                      ? "bg-sky-500 text-slate-900 font-semibold"
+                      : "bg-sky-500/15 text-sky-400 border border-sky-500/30"
                     : "text-muted-foreground hover:text-white hover:bg-secondary"
                 }`}
               >
@@ -537,6 +907,7 @@ export default function Index() {
       </nav>
 
       <main className="max-w-5xl mx-auto py-6">
+        {section === "upload" && <UploadSection />}
         {section === "charts" && <ChartsSection />}
         {section === "reference" && <ReferenceSection />}
         {section === "notifications" && <NotificationsSection />}
