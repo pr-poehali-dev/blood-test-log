@@ -42,15 +42,114 @@ const monthlyData = [
   { month: "Мар", hgb: 138, wbc: 9.2 },
 ];
 
-const referenceItems = [
-  { name: "Гемоглобин", male: "130–170 г/л", female: "120–150 г/л", role: "Перенос кислорода" },
-  { name: "Эритроциты", male: "4.0–5.0 ×10¹²/л", female: "3.5–4.7 ×10¹²/л", role: "Красные клетки крови" },
-  { name: "Лейкоциты", male: "4.0–9.0 ×10⁹/л", female: "4.0–9.0 ×10⁹/л", role: "Иммунная защита" },
-  { name: "Тромбоциты", male: "180–320 ×10⁹/л", female: "180–320 ×10⁹/л", role: "Свёртывание крови" },
-  { name: "Нейтрофилы", male: "47–72%", female: "47–72%", role: "Борьба с бактериями" },
-  { name: "Лимфоциты", male: "19–37%", female: "19–37%", role: "Клеточный иммунитет" },
-  { name: "Моноциты", male: "3–11%", female: "3–11%", role: "Фагоцитоз" },
-  { name: "СОЭ", male: "до 15 мм/ч", female: "до 20 мм/ч", role: "Маркер воспаления" },
+interface ReferenceItem {
+  name: string;
+  male: string;
+  female: string;
+  role: string;
+  critical?: string;
+}
+
+interface ReferenceGroup {
+  id: string;
+  label: string;
+  icon: string;
+  color: string;
+  items: ReferenceItem[];
+}
+
+const referenceGroups: ReferenceGroup[] = [
+  {
+    id: "cbc",
+    label: "ОАК",
+    icon: "Droplets",
+    color: "text-red-400",
+    items: [
+      { name: "Гемоглобин", male: "130–170 г/л", female: "120–150 г/л", role: "Перенос кислорода", critical: "<70 или >200 г/л" },
+      { name: "Эритроциты", male: "4.0–5.0 ×10¹²/л", female: "3.5–4.7 ×10¹²/л", role: "Красные клетки крови" },
+      { name: "Гематокрит", male: "40–48%", female: "36–46%", role: "Доля эритроцитов в крови" },
+      { name: "Лейкоциты", male: "4.0–9.0 ×10⁹/л", female: "4.0–9.0 ×10⁹/л", role: "Иммунная защита", critical: "<2.0 или >30 ×10⁹/л" },
+      { name: "Тромбоциты", male: "180–320 ×10⁹/л", female: "180–320 ×10⁹/л", role: "Свёртывание крови", critical: "<50 ×10⁹/л" },
+      { name: "Нейтрофилы", male: "47–72%", female: "47–72%", role: "Борьба с бактериями" },
+      { name: "Лимфоциты", male: "19–37%", female: "19–37%", role: "Клеточный иммунитет" },
+      { name: "Моноциты", male: "3–11%", female: "3–11%", role: "Фагоцитоз" },
+      { name: "Эозинофилы", male: "0–5%", female: "0–5%", role: "Аллергии и паразиты" },
+      { name: "Базофилы", male: "0–1%", female: "0–1%", role: "Аллергические реакции" },
+      { name: "СОЭ", male: "до 15 мм/ч", female: "до 20 мм/ч", role: "Маркер воспаления" },
+      { name: "MCV (средний объём эр.)", male: "80–100 фл", female: "80–100 фл", role: "Тип анемии" },
+      { name: "MCH (среднее содержание Hb)", male: "26–34 пг", female: "26–34 пг", role: "Насыщение эритроцитов" },
+      { name: "MCHC", male: "320–360 г/л", female: "320–360 г/л", role: "Концентрация Hb в эр." },
+    ],
+  },
+  {
+    id: "lipid",
+    label: "Липидограмма",
+    icon: "Activity",
+    color: "text-amber-400",
+    items: [
+      { name: "Общий холестерин", male: "до 5.2 ммоль/л", female: "до 5.2 ммоль/л", role: "Риск атеросклероза", critical: ">7.8 ммоль/л" },
+      { name: "ЛПНП (плохой холестерин)", male: "до 3.0 ммоль/л", female: "до 3.0 ммоль/л", role: "Атерогенный холестерин", critical: ">4.9 ммоль/л" },
+      { name: "ЛПВП (хороший холестерин)", male: ">1.0 ммоль/л", female: ">1.2 ммоль/л", role: "Антиатерогенный холестерин" },
+      { name: "ЛПОНП", male: "0.13–1.63 ммоль/л", female: "0.13–1.63 ммоль/л", role: "Очень низкой плотности" },
+      { name: "Триглицериды", male: "до 1.7 ммоль/л", female: "до 1.7 ммоль/л", role: "Жиры крови", critical: ">5.6 ммоль/л" },
+      { name: "Коэффициент атерогенности", male: "до 3.0", female: "до 3.0", role: "Соотношение фракций ХС" },
+      { name: "Аполипопротеин А1", male: "1.04–2.02 г/л", female: "1.08–2.25 г/л", role: "Транспорт ЛПВП" },
+      { name: "Аполипопротеин В", male: "0.66–1.33 г/л", female: "0.60–1.17 г/л", role: "Транспорт ЛПНП/ЛПОНП" },
+    ],
+  },
+  {
+    id: "electrolytes",
+    label: "Электролиты",
+    icon: "Zap",
+    color: "text-sky-400",
+    items: [
+      { name: "Натрий (Na⁺)", male: "136–145 ммоль/л", female: "136–145 ммоль/л", role: "Водно-солевой баланс", critical: "<120 или >160 ммоль/л" },
+      { name: "Калий (K⁺)", male: "3.5–5.1 ммоль/л", female: "3.5–5.1 ммоль/л", role: "Работа сердца и мышц", critical: "<2.5 или >6.5 ммоль/л" },
+      { name: "Хлор (Cl⁻)", male: "98–107 ммоль/л", female: "98–107 ммоль/л", role: "КЩС и гидратация" },
+      { name: "Кальций общий (Ca²⁺)", male: "2.15–2.55 ммоль/л", female: "2.15–2.55 ммоль/л", role: "Кости, мышцы, свёртывание", critical: "<1.75 или >3.5 ммоль/л" },
+      { name: "Кальций ионизированный", male: "1.15–1.27 ммоль/л", female: "1.15–1.27 ммоль/л", role: "Активная форма кальция" },
+      { name: "Магний (Mg²⁺)", male: "0.66–1.07 ммоль/л", female: "0.66–1.07 ммоль/л", role: "Нервная система, мышцы" },
+      { name: "Фосфор неорганический", male: "0.87–1.45 ммоль/л", female: "0.87–1.45 ммоль/л", role: "Костная ткань, энергия" },
+      { name: "Железо (Fe)", male: "11.6–31.3 мкмоль/л", female: "8.95–30.4 мкмоль/л", role: "Синтез гемоглобина", critical: "<4.5 мкмоль/л" },
+      { name: "ОЖСС", male: "45–72 мкмоль/л", female: "45–72 мкмоль/л", role: "Запасы железа" },
+      { name: "Ферритин", male: "30–400 нг/мл", female: "12–150 нг/мл", role: "Депо железа" },
+    ],
+  },
+  {
+    id: "coag",
+    label: "Коагулограмма",
+    icon: "Shield",
+    color: "text-purple-400",
+    items: [
+      { name: "Протромбиновое время (ПТВ)", male: "11–15 сек", female: "11–15 сек", role: "Внешний путь свёртывания", critical: ">30 сек" },
+      { name: "МНО (INR)", male: "0.85–1.15", female: "0.85–1.15", role: "Контроль антикоагулянтов", critical: ">4.0" },
+      { name: "АЧТВ", male: "25–37 сек", female: "25–37 сек", role: "Внутренний путь свёртывания", critical: ">100 сек" },
+      { name: "Тромбиновое время", male: "14–21 сек", female: "14–21 сек", role: "Финальный этап свёртывания" },
+      { name: "Фибриноген", male: "2.0–4.0 г/л", female: "2.0–4.0 г/л", role: "Основа кровяного сгустка", critical: "<1.0 г/л" },
+      { name: "D-димер", male: "до 0.5 мкг/мл", female: "до 0.5 мкг/мл", role: "Маркер тромбообразования", critical: ">4.0 мкг/мл" },
+      { name: "Антитромбин III", male: "80–120%", female: "80–120%", role: "Противосвёртывающая система" },
+      { name: "Протеин C", male: "70–140%", female: "70–140%", role: "Антикоагулянтная система" },
+      { name: "Время кровотечения по Дюку", male: "2–4 мин", female: "2–4 мин", role: "Первичный гемостаз" },
+    ],
+  },
+  {
+    id: "vitamins",
+    label: "Витамины",
+    icon: "Sun",
+    color: "text-yellow-400",
+    items: [
+      { name: "Витамин D (25-OH)", male: "30–100 нг/мл", female: "30–100 нг/мл", role: "Иммунитет, кости, гормоны", critical: "<10 нг/мл" },
+      { name: "Витамин B12", male: "187–883 пг/мл", female: "187–883 пг/мл", role: "Нервная система, кроветворение", critical: "<100 пг/мл" },
+      { name: "Фолиевая кислота (B9)", male: "4.6–34.8 нмоль/л", female: "4.6–34.8 нмоль/л", role: "ДНК-синтез, беременность" },
+      { name: "Витамин B1 (тиамин)", male: "70–180 нмоль/л", female: "70–180 нмоль/л", role: "Энергетический обмен" },
+      { name: "Витамин B6 (пиридоксин)", male: "20–125 нмоль/л", female: "20–125 нмоль/л", role: "Белковый обмен, иммунитет" },
+      { name: "Витамин C (аскорбиновая к-та)", male: "23–114 мкмоль/л", female: "23–114 мкмоль/л", role: "Антиоксидант, коллаген" },
+      { name: "Витамин A (ретинол)", male: "0.3–0.8 мг/л", female: "0.3–0.8 мг/л", role: "Зрение, иммунитет, кожа" },
+      { name: "Витамин E (токоферол)", male: "5.5–17 мг/л", female: "5.5–17 мг/л", role: "Антиоксидант, репродукция" },
+      { name: "Витамин K", male: "0.1–2.2 нг/мл", female: "0.1–2.2 нг/мл", role: "Свёртывание крови, кости" },
+      { name: "Биотин (B7)", male: "133–329 пмоль/л", female: "133–329 пмоль/л", role: "Метаболизм, кожа, волосы" },
+    ],
+  },
 ];
 
 const notificationsData = [
@@ -277,54 +376,127 @@ function ChartsSection() {
 
 // --- REFERENCE ---
 function ReferenceSection() {
+  const [activeGroup, setActiveGroup] = useState("cbc");
   const [search, setSearch] = useState("");
-  const filtered = referenceItems.filter(r =>
-    r.name.toLowerCase().includes(search.toLowerCase()) ||
-    r.role.toLowerCase().includes(search.toLowerCase())
-  );
+
+  const group = referenceGroups.find(g => g.id === activeGroup)!;
+
+  const allItems = search
+    ? referenceGroups.flatMap(g => g.items.map(item => ({ ...item, groupLabel: g.label, groupColor: g.color })))
+        .filter(r => r.name.toLowerCase().includes(search.toLowerCase()) || r.role.toLowerCase().includes(search.toLowerCase()))
+    : null;
+
+  const displayItems = allItems ?? group.items;
+  const totalCount = referenceGroups.reduce((acc, g) => acc + g.items.length, 0);
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <div className="stagger-1">
-        <h2 className="text-2xl font-bold text-white mb-1">Справочник норм</h2>
-        <p className="text-muted-foreground text-sm">Референсные значения показателей крови</p>
+    <div className="p-6 max-w-4xl mx-auto space-y-5">
+      <div className="stagger-1 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-2xl font-bold text-white mb-1">Справочник норм</h2>
+          <p className="text-muted-foreground text-sm">{totalCount} показателей · 5 групп анализов</p>
+        </div>
+        <div className="relative">
+          <Icon name="Search" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Поиск по всем группам..."
+            className="pl-8 pr-4 py-2 bg-card border border-border rounded-xl text-sm focus:outline-none focus:border-sky-500/60 focus:ring-1 focus:ring-sky-500/30 transition-all placeholder:text-muted-foreground/50 font-mono text-foreground w-52"
+          />
+          {search && (
+            <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white">
+              <Icon name="X" size={13} />
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="relative stagger-2">
-        <Icon name="Search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Поиск по показателям..."
-          className="w-full pl-9 pr-4 py-3 bg-card border border-border rounded-xl text-sm focus:outline-none focus:border-sky-500/60 focus:ring-1 focus:ring-sky-500/30 transition-all placeholder:text-muted-foreground/50 font-mono text-foreground"
-        />
-      </div>
+      {/* Group tabs */}
+      {!search && (
+        <div className="stagger-2 flex gap-2 overflow-x-auto pb-1">
+          {referenceGroups.map(g => (
+            <button
+              key={g.id}
+              onClick={() => setActiveGroup(g.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all whitespace-nowrap border ${
+                activeGroup === g.id
+                  ? "bg-card border-sky-500/40 text-white shadow-sm"
+                  : "bg-transparent border-border text-muted-foreground hover:text-white hover:border-border/80"
+              }`}
+            >
+              <Icon name={g.icon as "Droplets"} size={14} className={activeGroup === g.id ? g.color : "text-muted-foreground"} />
+              {g.label}
+              <span className={`text-xs font-mono px-1.5 py-0.5 rounded-md ${activeGroup === g.id ? "bg-sky-500/15 text-sky-400" : "bg-secondary text-muted-foreground"}`}>
+                {g.items.length}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
-      <div className="space-y-2 stagger-3">
-        <div className="grid grid-cols-4 gap-4 px-4 py-2 text-xs text-muted-foreground font-mono uppercase tracking-wider">
-          <span>Показатель</span>
-          <span>Мужчины</span>
-          <span>Женщины</span>
-          <span>Функция</span>
+      {/* Group header (when not searching) */}
+      {!search && (
+        <div className={`stagger-2 flex items-center gap-3 px-4 py-3 rounded-xl bg-card border border-border`}>
+          <div className={`w-8 h-8 rounded-lg bg-card border border-border flex items-center justify-center`}>
+            <Icon name={group.icon as "Droplets"} size={16} className={group.color} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-white">
+              {group.label === "ОАК" ? "Общий анализ крови (ОАК)" :
+               group.label === "Липидограмма" ? "Липидограмма крови" :
+               group.label === "Электролиты" ? "Ионограмма и электролиты крови" :
+               group.label === "Коагулограмма" ? "Коагулограмма и свёртываемость крови" :
+               "Витамины в крови"}
+            </p>
+            <p className="text-xs text-muted-foreground">{group.items.length} показателей</p>
+          </div>
+        </div>
+      )}
+
+      {/* Search results label */}
+      {search && allItems && (
+        <div className="text-sm text-muted-foreground font-mono">
+          Найдено: <span className="text-white">{allItems.length}</span> показателей по запросу «{search}»
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="stagger-3 space-y-1.5">
+        <div className="grid grid-cols-12 gap-3 px-4 py-2 text-xs text-muted-foreground font-mono uppercase tracking-wider">
+          <span className="col-span-4">Показатель</span>
+          <span className="col-span-3">Мужчины</span>
+          <span className="col-span-3">Женщины</span>
+          <span className="col-span-2">Функция</span>
         </div>
 
-        {filtered.map((item, i) => (
-          <div
-            key={item.name}
-            className="grid grid-cols-4 gap-4 px-4 py-3 bg-card border border-border rounded-xl hover:border-sky-500/30 hover:bg-card/80 transition-all"
-            style={{ animationDelay: `${i * 0.05}s` }}
-          >
-            <div className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
-              <span className="text-sm font-medium text-white">{item.name}</span>
+        {displayItems.map((item, i) => {
+          const hasCritical = "critical" in item && item.critical;
+          return (
+            <div
+              key={`${item.name}-${i}`}
+              className="grid grid-cols-12 gap-3 px-4 py-3 bg-card border border-border rounded-xl hover:border-sky-500/30 transition-all group"
+            >
+              <div className="col-span-4 flex items-start gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0 mt-1.5" />
+                <div>
+                  <span className="text-sm font-medium text-white leading-tight block">{item.name}</span>
+                  {hasCritical && (
+                    <span className="text-xs text-red-400/70 font-mono">крит: {item.critical}</span>
+                  )}
+                  {"groupLabel" in item && (
+                    <span className={`text-xs font-mono ${"groupColor" in item ? item.groupColor as string : "text-muted-foreground"} opacity-70`}>{item.groupLabel as string}</span>
+                  )}
+                </div>
+              </div>
+              <span className="col-span-3 text-sm font-mono text-blue-300 self-center leading-tight">{item.male}</span>
+              <span className="col-span-3 text-sm font-mono text-pink-300 self-center leading-tight">{item.female}</span>
+              <span className="col-span-2 text-xs text-muted-foreground self-center leading-tight">{item.role}</span>
             </div>
-            <span className="text-sm font-mono text-blue-300 self-center">{item.male}</span>
-            <span className="text-sm font-mono text-pink-300 self-center">{item.female}</span>
-            <span className="text-sm text-muted-foreground self-center">{item.role}</span>
-          </div>
-        ))}
+          );
+        })}
 
-        {filtered.length === 0 && (
+        {search && allItems?.length === 0 && (
           <div className="text-center py-12 text-muted-foreground">
             <Icon name="SearchX" size={32} className="mx-auto mb-2 opacity-30" />
             <p>Ничего не найдено по запросу «{search}»</p>
@@ -333,7 +505,7 @@ function ReferenceSection() {
       </div>
 
       <div className="stagger-4 bg-sky-500/10 border border-sky-500/20 rounded-xl p-4 flex gap-3">
-        <Icon name="Info" size={16} className="text-sky-400 mt-0.5 shrink-0" />
+        <Icon name="Info" size={15} className="text-sky-400 mt-0.5 shrink-0" />
         <p className="text-sm text-sky-300/80">
           Референсные значения могут отличаться в зависимости от метода исследования и лаборатории. Для интерпретации результатов консультируйтесь с врачом.
         </p>
