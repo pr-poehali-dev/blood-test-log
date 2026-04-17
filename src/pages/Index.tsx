@@ -1,9 +1,10 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 
-type Section = "cover" | "charts" | "reference" | "notifications" | "export" | "upload";
+type Section = "cover" | "charts" | "reference" | "notifications" | "export" | "upload" | "history";
 
 const ANALYZE_URL = "https://functions.poehali.dev/0fb0bb3b-8721-44b2-8740-cffed004e0ff";
+const HISTORY_URL = "https://functions.poehali.dev/dc279a56-a17f-45bb-bb46-10f88b4e1230";
 
 interface RecognizedResult {
   name: string;
@@ -678,13 +679,15 @@ function ExportSection() {
 // --- UPLOAD SECTION ---
 type UploadState = "idle" | "dragging" | "processing" | "done" | "error";
 
-function UploadSection() {
+function UploadSection({ onSaved }: { onSaved?: () => void }) {
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [progress, setProgress] = useState(0);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResponse | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [savedId, setSavedId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reset = () => {
@@ -694,6 +697,33 @@ function UploadSection() {
     setFileName(null);
     setResult(null);
     setErrorMsg(null);
+    setSaving(false);
+    setSavedId(null);
+  };
+
+  const saveToHistory = async () => {
+    if (!result) return;
+    setSaving(true);
+    try {
+      const resp = await fetch(HISTORY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: result.date,
+          lab: result.lab,
+          patient: result.patient,
+          file_name: fileName,
+          results: result.results,
+        }),
+      });
+      const data = await resp.json();
+      setSavedId(data.id || "ok");
+      onSaved?.();
+    } catch {
+      setSavedId(null);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const processFile = useCallback(async (file: File) => {
@@ -984,7 +1014,7 @@ function UploadSection() {
           </div>
 
           {/* Actions */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-3 pt-2 flex-wrap">
             <button
               onClick={reset}
               className="flex items-center gap-2 px-4 py-2.5 border border-border hover:border-sky-500/30 text-muted-foreground hover:text-white text-sm rounded-xl transition-all font-mono"
@@ -992,10 +1022,23 @@ function UploadSection() {
               <Icon name="Upload" size={15} />
               Загрузить другой
             </button>
-            <button className="flex items-center gap-2 px-4 py-2.5 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-400 text-sm rounded-xl transition-all font-mono">
-              <Icon name="Save" size={15} />
-              Сохранить в историю
-            </button>
+            {!savedId ? (
+              <button
+                onClick={saveToHistory}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2.5 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-400 text-sm rounded-xl transition-all font-mono disabled:opacity-60"
+              >
+                {saving
+                  ? <><Icon name="Loader" size={15} className="animate-spin" /> Сохраняем...</>
+                  : <><Icon name="Save" size={15} /> Сохранить в историю</>
+                }
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-green-500/10 border border-green-500/30 text-green-400 text-sm rounded-xl font-mono">
+                <Icon name="CheckCircle" size={15} />
+                Сохранено в историю
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1024,9 +1067,307 @@ function UploadSection() {
   );
 }
 
+// --- HISTORY SECTION ---
+interface StoredResult {
+  id: string;
+  name: string;
+  value: number;
+  unit: string;
+  norm_min: number | null;
+  norm_max: number | null;
+  status: string;
+}
+
+interface StoredAnalysis {
+  id: string;
+  created_at: string;
+  analysis_date: string | null;
+  lab: string | null;
+  patient: string | null;
+  file_name: string | null;
+  results: StoredResult[];
+}
+
+interface TrendPoint {
+  date: string;
+  value: number;
+  unit: string;
+  norm_min: number | null;
+  norm_max: number | null;
+  status: string;
+}
+
+function HistorySection({ refreshKey }: { refreshKey: number }) {
+  const [analyses, setAnalyses] = useState<StoredAnalysis[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [trendIndicator, setTrendIndicator] = useState<string | null>(null);
+  const [trendData, setTrendData] = useState<TrendPoint[]>([]);
+  const [trendLoading, setTrendLoading] = useState(false);
+
+  const loadHistory = useCallback(async () => {
+    setLoading(true);
+    try {
+      const resp = await fetch(HISTORY_URL);
+      const data = await resp.json();
+      setAnalyses(data.analyses || []);
+    } catch {
+      setAnalyses([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadHistory(); }, [loadHistory, refreshKey]);
+
+  const loadTrend = async (name: string) => {
+    setTrendIndicator(name);
+    setTrendLoading(true);
+    try {
+      const resp = await fetch(`${HISTORY_URL}?indicator=${encodeURIComponent(name)}`);
+      const data = await resp.json();
+      setTrendData(data.points || []);
+    } catch {
+      setTrendData([]);
+    } finally {
+      setTrendLoading(false);
+    }
+  };
+
+  // Collect all unique indicator names across all analyses
+  const allIndicators = Array.from(
+    new Set(analyses.flatMap(a => a.results.map(r => r.name)))
+  ).sort();
+
+  const statusDot = (s: string) => {
+    if (s === "normal") return "bg-green-400";
+    if (s === "high") return "bg-amber-400";
+    if (s === "low") return "bg-red-400";
+    return "bg-muted-foreground";
+  };
+  const statusText = (s: string) => {
+    if (s === "normal") return "text-green-400";
+    if (s === "high") return "text-amber-400";
+    if (s === "low") return "text-red-400";
+    return "text-muted-foreground";
+  };
+
+  const formatDate = (iso: string | null, created: string) => {
+    const src = iso || created;
+    try {
+      return new Date(src).toLocaleDateString("ru-RU", { day: "2-digit", month: "short", year: "numeric" });
+    } catch { return src; }
+  };
+
+  // Mini bar chart for trend
+  const TrendChart = ({ points }: { points: TrendPoint[] }) => {
+    if (points.length < 2) return (
+      <p className="text-sm text-muted-foreground text-center py-4">Нужно минимум 2 анализа для графика</p>
+    );
+    const values = points.map(p => p.value);
+    const minV = Math.min(...values);
+    const maxV = Math.max(...values);
+    const range = maxV - minV || 1;
+    const normMin = points[0].norm_min;
+    const normMax = points[0].norm_max;
+    return (
+      <div>
+        <div className="flex items-end gap-2 h-28 px-2 mt-2">
+          {points.map((p, i) => {
+            const h = Math.max(10, ((p.value - minV) / range) * 100);
+            const barColor = p.status === "normal" ? "bg-green-500/70 hover:bg-green-400"
+              : p.status === "high" ? "bg-amber-500/70 hover:bg-amber-400"
+              : "bg-red-500/70 hover:bg-red-400";
+            return (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                <span className={`text-xs font-mono ${statusText(p.status)}`}>{p.value}</span>
+                <div className="w-full flex items-end justify-center" style={{ height: "64px" }}>
+                  <div
+                    className={`w-full rounded-t-md transition-colors bar-animate ${barColor}`}
+                    style={{ height: `${h}%`, animationDelay: `${i * 0.08}s` }}
+                    title={`${p.date}: ${p.value} ${p.unit}`}
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground font-mono" style={{ fontSize: "10px" }}>
+                  {new Date(p.date).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        {(normMin !== null || normMax !== null) && (
+          <div className="flex items-center gap-2 mt-3 text-xs text-muted-foreground">
+            <div className="h-px flex-1 border-t border-dashed border-green-500/30" />
+            <span className="text-green-400 font-mono">Норма: {normMin ?? "—"}–{normMax ?? "—"} {points[0].unit}</span>
+            <div className="h-px flex-1 border-t border-dashed border-green-500/30" />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
+      <div className="stagger-1 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-2xl font-bold text-white mb-1">История анализов</h2>
+          <p className="text-muted-foreground text-sm">
+            {loading ? "Загрузка..." : analyses.length === 0 ? "Нет сохранённых анализов" : `${analyses.length} анализ${analyses.length === 1 ? "" : analyses.length < 5 ? "а" : "ов"} в базе`}
+          </p>
+        </div>
+        <button
+          onClick={loadHistory}
+          className="flex items-center gap-2 px-3 py-1.5 border border-border hover:border-sky-500/30 text-muted-foreground hover:text-white text-sm rounded-lg transition-all font-mono"
+        >
+          <Icon name="RefreshCw" size={13} />
+          Обновить
+        </button>
+      </div>
+
+      {/* Loading skeleton */}
+      {loading && (
+        <div className="space-y-3 stagger-2">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-20 bg-card border border-border rounded-xl animate-pulse" />
+          ))}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!loading && analyses.length === 0 && (
+        <div className="stagger-2 text-center py-16 text-muted-foreground">
+          <Icon name="ClipboardList" size={40} className="mx-auto mb-3 opacity-20" />
+          <p className="text-sm font-medium mb-1">История пока пуста</p>
+          <p className="text-xs opacity-60">Загрузите бланк анализа и нажмите «Сохранить в историю»</p>
+        </div>
+      )}
+
+      {/* Trend picker — shown when 2+ analyses exist */}
+      {!loading && analyses.length >= 2 && allIndicators.length > 0 && (
+        <div className="stagger-2 bg-card border border-border rounded-xl p-5 space-y-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Icon name="TrendingUp" size={16} className="text-sky-400" />
+            <span className="text-sm font-semibold text-white">Динамика показателя</span>
+            <span className="text-xs text-muted-foreground font-mono">выберите показатель для графика</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {allIndicators.map(name => (
+              <button
+                key={name}
+                onClick={() => loadTrend(name)}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-all font-mono ${
+                  trendIndicator === name
+                    ? "bg-sky-500/15 border-sky-500/40 text-sky-400"
+                    : "bg-secondary border-border text-muted-foreground hover:text-white hover:border-sky-500/30"
+                }`}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+          {trendIndicator && (
+            <div className="pt-2">
+              <p className="text-sm font-medium text-white mb-1">{trendIndicator}</p>
+              {trendLoading
+                ? <div className="h-28 bg-secondary rounded-xl animate-pulse" />
+                : <TrendChart points={trendData} />
+              }
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Analyses list */}
+      {!loading && analyses.length > 0 && (
+        <div className="stagger-3 space-y-3">
+          {analyses.map((a) => {
+            const isOpen = expanded === a.id;
+            const abnormal = a.results.filter(r => r.status !== "normal" && r.status !== "unknown");
+            const dateLabel = formatDate(a.analysis_date, a.created_at);
+            return (
+              <div key={a.id} className="bg-card border border-border rounded-xl overflow-hidden hover:border-sky-500/20 transition-colors">
+                {/* Header row */}
+                <button
+                  className="w-full flex items-center gap-4 px-5 py-4 text-left"
+                  onClick={() => setExpanded(isOpen ? null : a.id)}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0">
+                    <Icon name="FileText" size={18} className="text-sky-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-white">{dateLabel}</span>
+                      {a.lab && <span className="text-xs text-muted-foreground font-mono">{a.lab}</span>}
+                      {a.patient && <span className="text-xs text-sky-400/70 font-mono">{a.patient}</span>}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 flex-wrap">
+                      <span className="text-xs text-muted-foreground">{a.results.length} показателей</span>
+                      {abnormal.length > 0 && (
+                        <span className="text-xs text-amber-400 font-mono">
+                          {abnormal.length} вне нормы
+                        </span>
+                      )}
+                      {a.file_name && (
+                        <span className="text-xs text-muted-foreground/50 truncate max-w-32">{a.file_name}</span>
+                      )}
+                    </div>
+                  </div>
+                  {/* Status summary dots */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {a.results.slice(0, 6).map((r, i) => (
+                      <div key={i} className={`w-2 h-2 rounded-full ${statusDot(r.status)}`} title={r.name} />
+                    ))}
+                    {a.results.length > 6 && (
+                      <span className="text-xs text-muted-foreground font-mono">+{a.results.length - 6}</span>
+                    )}
+                  </div>
+                  <Icon name={isOpen ? "ChevronUp" : "ChevronDown"} size={16} className="text-muted-foreground shrink-0" />
+                </button>
+
+                {/* Expanded results */}
+                {isOpen && (
+                  <div className="border-t border-border px-5 pb-4 pt-3">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      {a.results.map((r, i) => (
+                        <div
+                          key={i}
+                          className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs ${
+                            r.status === "high" ? "border-amber-500/20 bg-amber-500/5" :
+                            r.status === "low" ? "border-red-500/20 bg-red-500/5" :
+                            "border-border bg-secondary/30"
+                          }`}
+                        >
+                          <span className="text-muted-foreground truncate mr-2">{r.name}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={`font-mono font-bold ${statusText(r.status)}`}>{r.value}</span>
+                            <span className="text-muted-foreground/50">{r.unit}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {abnormal.length > 0 && (
+                      <div className="mt-3 flex items-start gap-2 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
+                        <Icon name="AlertTriangle" size={14} className="text-amber-400 mt-0.5 shrink-0" />
+                        <p className="text-xs text-amber-300/80">
+                          Вне нормы: {abnormal.map(r => r.name).join(", ")}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- NAV ---
 const navItems = [
   { id: "upload", label: "Загрузить", icon: "Upload" },
+  { id: "history", label: "История", icon: "ClipboardList" },
   { id: "charts", label: "Графики", icon: "BarChart2" },
   { id: "reference", label: "Справочник", icon: "BookOpen" },
   { id: "notifications", label: "Уведомления", icon: "Bell" },
@@ -1036,6 +1377,12 @@ const navItems = [
 // --- MAIN ---
 export default function Index() {
   const [section, setSection] = useState<Section>("cover");
+  const [historyRefresh, setHistoryRefresh] = useState(0);
+
+  const handleSaved = useCallback(() => {
+    setHistoryRefresh(k => k + 1);
+    setTimeout(() => setSection("history"), 800);
+  }, []);
 
   if (section === "cover") {
     return <CoverPage onStart={() => setSection("upload")} />;
@@ -1079,7 +1426,8 @@ export default function Index() {
       </nav>
 
       <main className="max-w-5xl mx-auto py-6">
-        {section === "upload" && <UploadSection />}
+        {section === "upload" && <UploadSection onSaved={handleSaved} />}
+        {section === "history" && <HistorySection refreshKey={historyRefresh} />}
         {section === "charts" && <ChartsSection />}
         {section === "reference" && <ReferenceSection />}
         {section === "notifications" && <NotificationsSection />}

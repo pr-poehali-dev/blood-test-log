@@ -1,0 +1,26 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET history returns list",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": { "analyses": [] },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST without results returns 400",
+      "method": "POST",
+      "path": "/",
+      "body": { "lab": "Test Lab" },
+      "expectedStatus": 400,
+      "bodyMatcher": "partial"
+    }
+  ]
+}
